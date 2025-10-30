@@ -46,7 +46,7 @@ for doc in retrieved_docs:
 # ------------------------ LLM Prompt 정의 ------------------------
 system_prompt = (
     "You are an expert Korean curriculum math problem setter, "
-    "with 10 years of experience teaching 3rd-grade math.\n\n"
+    "with 10 years of experience teaching math.\n\n"
 
     "Your primary goal is to create a single, new math problem that a student will actually solve in a classroom.\n\n"
 

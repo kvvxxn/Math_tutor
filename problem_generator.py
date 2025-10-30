@@ -2,7 +2,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer,AutoProcessor
 from transformers import Qwen2_5_VLForConditionalGeneration
 from langchain_community.vectorstores import Chroma
-from retriever import create_vectorstore, parsing_user_input, retrieve, embed_model
+from retriever import create_vectorstore, parsing_user_input, retrieve
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -20,14 +20,13 @@ curriculum_vectorstore = create_vectorstore(
     name="curriculum_vectorstore",
     persist_directory="./vectordb/curriculum"
 )
-curriculum_query = embed_model.embed_query(curriculum_query)
+
 retriever = curriculum_vectorstore.as_retriever()
 retrieved_docs = retrieve(retriever, curriculum_query, k=3)
 
 # Content vectorstore retrieve 용 Query 생성 및 Embedding
 query = "Based on the following curriculum content, provide specific achievement criteria, representative examples, and concepts.\n\n"
 query = query + "\n".join([doc.page_content for doc in retrieved_docs])
-query = embed_model(query)
 
 # Content VectorStore 생성
 content_vectorstore = create_vectorstore(

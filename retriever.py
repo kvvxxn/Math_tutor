@@ -20,7 +20,12 @@ PERSIST_DIR.mkdir(exist_ok=True)
 embed_model = HuggingFaceEmbeddings(model_name=EMB_MODEL)
 
 # Text Splitter 초기화
-md_splitter = MarkdownHeaderTextSplitter()
+headers_to_split_on = [
+    ("#", "Header 1"),
+    ("##", "Header 2"),
+    ("###", "Header 3"),
+]
+md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=1000,
     chunk_overlap=100,
@@ -67,8 +72,11 @@ def create_vectorstore(file: str, name: str, persist_directory: str = None) -> C
     loader = UnstructuredMarkdownLoader(str(file_path))
     doc = loader.load()
 
+    # 페이지 콘텐츠 추출
+    raw_text = doc[0].page_content # 파일을 하나만 사용한다고 가정
+
     # Markdown Header 기반 Split
-    header_splitted_docs = md_splitter.split_documents(doc)
+    header_splitted_docs = md_splitter.split_text(raw_text) 
 
     # RecursiveCharacterTextSplitter 기반 추가 Split
     docs = text_splitter.split_documents(header_splitted_docs)
@@ -87,7 +95,7 @@ def create_vectorstore(file: str, name: str, persist_directory: str = None) -> C
         embedding=embed_model,
         persist_directory=str(persist_directory),
     )
-    vectorstore.persist() # DB 저장
+
     return vectorstore
 
 
@@ -134,6 +142,6 @@ def retrieve(retriever, query: str, k: int) -> list[Document]:
       list[Document]: 검색된 문서들의 리스트
   """
   retriever.search_kwargs = {"k": k}
-  docs = retriever.get_relevant_documents(query)
+  docs = retriever.invoke(query)
 
   return docs

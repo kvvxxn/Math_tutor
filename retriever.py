@@ -1,10 +1,10 @@
 from pathlib import Path
 import re
 from langchain_community.document_loaders import UnstructuredMarkdownLoader
-from langchain.text_splitter import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
+from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain.schema import Document
+from langchain_core.documents import Document
 
 # 프로젝트 루트 디렉토리 설정
 ROOT_DIR = Path(__file__).parent

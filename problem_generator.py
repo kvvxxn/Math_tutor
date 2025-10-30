@@ -1,7 +1,6 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer,AutoProcessor
 from transformers import Qwen2_5_VLForConditionalGeneration
-from qwen_vl_utils import process_vision_info
 from langchain_community.vectorstores import Chroma
 from retriever import create_vectorstore, parsing_user_input, retrieve, embed_model
 

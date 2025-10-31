@@ -6,36 +6,22 @@ from retriever import create_vectorstore, parsing_user_input, retrieve
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
-CURRICULUM_FILE = "교육과정총정리.md"
-
 # input 받기
 user_input = input("문제 생성을 위해 원하는 학년과 학기의 단원 입력하세요 (예: 초등 3학년 2학기 나눗셈) : ")
 
 # input 파싱
 content_file, curriculum_query, course, grade, semester, unit = parsing_user_input(user_input)
 
-# VectorStore 로드 또는 생성
-curriculum_vectorstore = create_vectorstore(
-    CURRICULUM_FILE, 
-    name="curriculum_vectorstore",
-    persist_directory="./vectordb/curriculum"
-)
-
-retriever = curriculum_vectorstore.as_retriever()
-retrieved_docs = retrieve(retriever, curriculum_query, k=3)
-
 # Content vectorstore retrieve 용 Query 생성 및 Embedding
-query = "Based on the following curriculum content, provide specific achievement criteria, representative examples, and concepts.\n\n"
-query = query + "\n".join([doc.page_content for doc in retrieved_docs])
+query = f"Key concepts, achievement criteria, and instructional considerations for the unit '{unit}' of {course}, Grade {grade}, Semester {semester}"
 
-# Content VectorStore 생성
 content_vectorstore = create_vectorstore(
     content_file, 
     name="content_vectorstore",
     persist_directory="./vectordb/content"
 )
 retriever = content_vectorstore.as_retriever()
-retrieved_docs = retrieve(retriever, query, k=4)
+retrieved_docs = retrieve(retriever, query, k=2)
 
 
 # ------------------------ Retrieved Docs 출력 ------------------------

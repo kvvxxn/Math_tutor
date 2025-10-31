@@ -1,6 +1,6 @@
 import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer,AutoProcessor
-from transformers import Qwen2_5_VLForConditionalGeneration
+from transformers import AutoModelForCausalLM, AutoTokenizer
+from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
 from langchain_community.vectorstores import Chroma
 from retriever import create_vectorstore, parsing_user_input, retrieve
 
@@ -54,7 +54,10 @@ system_prompt = (
     "\t1. You MUST generate the problem itself, NOT instructions about how to create a problem.\n"
     "\t2. You MUST NOT generate meta-questions or meta-problems (e.g., \"Create a division problem...\").\n"
     "\t3. Base the problem *only* on the provided curriculum content.\n"
-    "\t4. Always provide the output *only* in the requested format (Problem Type, Problem, Choices).\n"
+    "\t4. Always provide the output *only* in the requested format (Problem Type, Problem, Choices, Image).\n"
+    "\t5. For problems involving shapes, only one shape may be included. "
+    "This shape MUST be represented as SVG (Scalable Vector Graphics) code placed in the 'Image' field. "
+    "If no image is needed, you MUST write 'N/A' in the 'Image' field.\n"
 )
 
 user_prompt = (
@@ -75,21 +78,27 @@ user_prompt += (
     "1. Problem Type: 'multiple choice' or 'subjective'\n"
     "2. Problem: [The math problem statement] (난이도: [하, 중, 상])\n"
     "3. Choices: [If multiple choice, list 5 options separated by commas. If subjective, write 'N/A']\n\n"
+    "4. Image: [If an image is necessary for the problem, only one shape may be included. If not needed, write 'N/A']\n\n"
 )
 
 # Three-shot Examples
 user_prompt += (
-    "Example Format of multiple choice:\n"
+    "Example math problems\n\n"
+
+    "Problem Type: multiple choices\n"
     "Problem: 좌표평면 위의 두 점 (1, -1), (2, 1)을 지나는 직선의 Y절편은? (난이도: 하)\n"
-    "Choices: 1. -3, 2. -2, 3. -1, 4. 0, 5. 1\n\n"
+    "Choices: 1. -3, 2. -2, 3. -1, 4. 0, 5. 1\n"
+    "Image: N/A\n\n"
 
-    "Example Format of multiple choice:\n"
+    "Problem Type: multiple choices\n"
     "Problem: 두 자연수 a, b에 대하여 다항식 2x^2 + 9x + k가 (2x+a)(x+b)로 인수분해되도록 하는 실수 k의 최솟값은? (난이도: 중)\n"
-    "Choices: 1. 1, 2. 4, 3. 7, 4. 10, 5. 13\n\n"
+    "Choices: 1. 1, 2. 4, 3. 7, 4. 10, 5. 13\n"
+    "Image: N/A\n\n"
 
-
-    "Example Format of subjective\n"
-    "Problem: p < q인 두 소수 p, q에 대하여 p^2q < n <= pq^2을 만족하는 자연수 n의 개수가 308개일 때, p+q를 구하시오. (난이도: 상)\n\n"
+    "Problem Type: subjective\n"
+    "Problem: p < q인 두 소수 p, q에 대하여 p^2q < n <= pq^2을 만족하는 자연수 n의 개수가 308개일 때, p+q를 구하시오. (난이도: 상)\n"
+    "Choices: N/A\n"
+    "Image: N/A\n\n"
 )
 
 # ------------------------ GPT 응답 생성 ------------------------
@@ -116,7 +125,7 @@ gpt_inputs = gpt_tokenizer([gpt_prompt], return_tensors="pt").to(device)
 with torch.inference_mode():
     gpt_out = gpt_model.generate(
         **gpt_inputs,
-        max_new_tokens=256,
+        max_new_tokens=512,
         do_sample=True,
         temperature=0.7,
         top_p=0.9,
@@ -131,10 +140,10 @@ print(gpt_tokenizer.decode(gpt_out[0], skip_special_tokens=True))
 
 # ------------------------ QWEN 응답 생성 ------------------------
 # Load Qwen2.5-VL-7B Instruct model 
-qwen_model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
-    "Qwen/Qwen2.5-VL-7B-Instruct", torch_dtype="auto", device_map="auto"
+qwen_model = Qwen3VLForConditionalGeneration.from_pretrained(
+    "Qwen/Qwen3-VL-8B-Instruct", torch_dtype="auto", device_map="auto"
 )
-processor = AutoProcessor.from_pretrained("Qwen/Qwen2.5-VL-7B-Instruct")
+processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 
 # Qwen2.5-VL-7B Instruct Inference
 qwen_messages = [
@@ -145,29 +154,34 @@ qwen_messages = [
     {
         "role": "user",
         "content": [
-            {"type": "text", "text": user_prompt},
+            {
+                "type": "text", "text": user_prompt
+                # "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
+            },
+            """ 이미지에 대한 설명
+            {
+                \"type\": \"text\", \"text\":
+            },
+            """
         ],
     }
 ]
 
-text = processor.apply_chat_template(
-    qwen_messages, tokenize=False, add_generation_prompt=True
+inputs = processor.apply_chat_template(
+    qwen_messages,
+    tokenize=True,
+    add_generation_prompt=True,
+    return_dict=True,
+    return_tensors="pt"
 )
-inputs = processor(
-    text=[text],
-    images=None,
-    videos=None,
-    padding=True,
-    return_tensors="pt",
-)
-inputs = inputs.to("cuda")
+inputs = inputs.to(qwen_model.device)
 
-# Inference: Generation of the output
+# Inference
 with torch.inference_mode():
     generated_ids =  qwen_model.generate(
         **inputs,
-        max_new_tokens=256,
-        do_sample=True,
+        max_new_tokens=512,
+        do_sample=True, # Next word 선택 시 Sampling
         temperature=0.7,
         top_p=0.9,
     )
@@ -178,5 +192,5 @@ generated_ids_trimmed = [
 output_text = processor.batch_decode(
     generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
 )
-print("Qwen2.5-VL-7B Instruct Output")
-print(output_text[0])
+print("Qwen3-VL-7B Instruct Output")
+print(output_text)

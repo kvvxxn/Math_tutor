@@ -25,10 +25,14 @@ NAME_MAP: Dict[str, str] = {
     "초등_56학년_교육과정": "Element_56",
 }
 
-# Splitter / Embedding (단일 파일용 create_vectorstore와 동일 구성)
-md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=[
-    ("#", "h1"), ("##", "h2"), ("###", "h3"), ("####", "h4")
-])
+# Splitter / Embedding 
+headers_to_split_on = [
+    ("#", "Header 1"),
+    ("##", "Header 2"),
+    ("###", "Header 3"),
+]
+md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
+
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=500, chunk_overlap=80, separators=["\n\n", "\n"]
 )

@@ -10,17 +10,13 @@ device = "cuda" if torch.cuda.is_available() else "cpu"
 user_input = input("문제 생성을 위해 원하는 학년과 학기의 단원 입력하세요 (예: 초등 3학년 2학기 나눗셈) : ")
 
 # input 파싱
-content_file, curriculum_query, course, grade, semester, unit = parsing_user_input(user_input)
+vectordb, course, grade, semester, unit = parsing_user_input(user_input)
 
 # Content vectorstore retrieve 용 Query 생성 및 Embedding
 query = f"Key concepts, achievement criteria, and instructional considerations for the unit '{unit}' of {course}, Grade {grade}, Semester {semester}"
 
-content_vectorstore = create_vectorstore(
-    content_file, 
-    name="content_vectorstore",
-    persist_directory="./vectordb/content"
-)
-retriever = content_vectorstore.as_retriever()
+# Document retrieve
+retriever = vectordb.as_retriever()
 retrieved_docs = retrieve(retriever, query, k=2)
 
 
@@ -142,13 +138,7 @@ qwen_messages = [
         "content": [
             {
                 "type": "text", "text": user_prompt
-                # "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg",
             },
-            """ 이미지에 대한 설명
-            {
-                \"type\": \"text\", \"text\":
-            },
-            """
         ],
     }
 ]

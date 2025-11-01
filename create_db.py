@@ -2,8 +2,8 @@ from pathlib import Path
 from typing import Dict, List
 from langchain_community.document_loaders import UnstructuredMarkdownLoader
 from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_chroma import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
 
 # 프로젝트 루트 및 경로
 ROOT_DIR = Path(__file__).parent

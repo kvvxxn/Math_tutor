@@ -1,8 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
-from langchain_community.vectorstores import Chroma
-from retriever import create_vectorstore, parsing_user_input, retrieve
+from retriever import parsing_user_input, retrieve
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 
@@ -13,7 +12,7 @@ user_input = input("문제 생성을 위해 원하는 학년과 학기의 단원
 vectordb, course, grade, semester, unit = parsing_user_input(user_input)
 
 # Content vectorstore retrieve 용 Query 생성 및 Embedding
-query = f"Key concepts, achievement criteria, and instructional considerations for the unit '{unit}' of {course}, Grade {grade}, Semester {semester}"
+query = f"Key concepts, achievement criteria, and instructional considerations for the unit '{unit}'."
 
 # Document retrieve
 retriever = vectordb.as_retriever()
@@ -90,7 +89,7 @@ gpt_model_id = "openai/gpt-oss-20b"
 gpt_tokenizer = AutoTokenizer.from_pretrained(gpt_model_id, use_fast=True)
 gpt_model = AutoModelForCausalLM.from_pretrained(
     gpt_model_id,
-    torch_dtype="auto",
+    dtype="auto",
     device_map="auto",           
 ).to(device)
 
@@ -131,7 +130,9 @@ processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 qwen_messages = [
     {
         "role": "system", 
-        "content": system_prompt
+        "content": [  
+            {"type": "text", "text": system_prompt}
+        ]
     },
     {
         "role": "user",
@@ -168,5 +169,5 @@ generated_ids_trimmed = [
 output_text = processor.batch_decode(
     generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
 )
-print("Qwen3-VL-7B Instruct Output")
-print(output_text)
+print("Qwen3-VL-8B Instruct Output")
+print(output_text[0])

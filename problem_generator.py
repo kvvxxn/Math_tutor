@@ -26,8 +26,7 @@ for doc in retrieved_docs:
 
 # ------------------------ LLM Prompt 정의 ------------------------
 system_prompt = (
-    "You are an expert Korean curriculum math problem setter, "
-    "with 10 years of experience teaching math.\n\n"
+    "You are an expert Korean curriculum math problem setter, with 20 years of experience teaching math.\n\n"
 
     "Your primary goal is to create a single, new math problem that a student will actually solve in a classroom.\n\n"
 
@@ -35,17 +34,19 @@ system_prompt = (
     "\t1. You MUST generate the problem itself, NOT instructions about how to create a problem.\n"
     "\t2. You MUST NOT generate meta-questions or meta-problems (e.g., \"Create a division problem...\").\n"
     "\t3. Base the problem *only* on the provided curriculum content.\n"
-    "\t4. Always provide the output *only* in the requested format (Problem Type, Problem, Choices, Image).\n"
+    "\t4. Output MUST be ONLY a single JSON object that follows the exact schema below. Do NOT add any explanations, analysis, \
+        reasoning, thoughts, disclaimers, prefaces, or extra text before or after the JSON. Do NOT wrap the JSON in backticks.\n"
     "\t5. For problems involving shapes, only one shape may be included. "
-    "This shape MUST be represented as SVG (Scalable Vector Graphics) code placed in the 'Image' field. "
-    "If no image is needed, you MUST write 'N/A' in the 'Image' field.\n"
+        "This shape MUST be represented as SVG (Scalable Vector Graphics) code placed in the '이미지' field. "
+        "If no image is needed, you MUST write 'N/A' in the 'Image' field.\n"
+    "\t6. NEVER reveal your chain-of-thought, rationale, or intermediate steps. Think privately, but output ONLY the final JSON object.\n"
 )
 
 user_prompt = (
-    f"Using the following curriculum details for {course} {grade}grade {semester} semester's {unit}, "
-    "generate a new math problem based on curriculum detail's achivements.\n\n"
-    "Choose the type (Multiple choices / Subjective) and Difficulty (상 / 중 / 하) that best suit the given unit and purpose.\n"
-    "Curriculum Details:\n"
+    f"{course} {grade}학년 {semester}학기의 {unit} 단원에 대한 아래 커리큘럼 내용을 이용해서, "
+    "커리큘럼의 성취 기준에 맞추어서 하나의 수학 문제를 생성해줘.\n\n"
+    "생성할 문제를 위해 주어진 목적과 단원을 바탕으로 두 가지 문제 유형(객관식 / 주관식) 중 하나를 선택해야 하고, 세 가지 난이도(상 / 중 / 하) 중 하나를 선택해야 해.\n"
+    "커리큘럼:\n"
 )
 
 # Retrieved Docs 추가
@@ -55,32 +56,56 @@ for doc in retrieved_docs:
 
 # Format Instructions
 user_prompt += (
-    "Please provide the output in the following format:\n"
-    "1. Problem Type: 'multiple choice' or 'subjective'\n"
-    "2. Problem: [The math problem statement] (난이도: [하, 중, 상])\n"
-    "3. Choices: [If multiple choice, list 5 options separated by commas. If subjective, write 'N/A']\n\n"
-    "4. Image: [If an image is necessary for the problem, only one shape may be included. If not needed, write 'N/A']\n\n"
+    "한국어로 생성한 문제를 아래 JSON 형식으로 작성하여 제공해줘.\n"
+    "{\n"
+    '    "problems": [\n'
+    '        {"유형": "객관식 / 주관식"},\n'
+    '        {"문제": "[The math problem statement]"},\n'
+    '        {"난이도": "상 / 중 / 하"},\n'
+    '        {"보기": "If multiple choice, list 5 options separated by commas. If subjective, write \'N/A\'"},\n'
+    '        {"이미지": "If an image is necessary for the problem, only one shape may be included. If not needed, write \'N/A\'"}\n'
+    '    ]\n'
+    '}\n\n'
 )
 
 # Three-shot Examples
 user_prompt += (
-    "Example math problems\n\n"
-
-    "Problem Type: multiple choices\n"
-    "Problem: 좌표평면 위의 두 점 (1, -1), (2, 1)을 지나는 직선의 Y절편은? (난이도: 하)\n"
-    "Choices: 1. -3, 2. -2, 3. -1, 4. 0, 5. 1\n"
-    "Image: N/A\n\n"
-
-    "Problem Type: multiple choices\n"
-    "Problem: 두 자연수 a, b에 대하여 다항식 2x^2 + 9x + k가 (2x+a)(x+b)로 인수분해되도록 하는 실수 k의 최솟값은? (난이도: 중)\n"
-    "Choices: 1. 1, 2. 4, 3. 7, 4. 10, 5. 13\n"
-    "Image: N/A\n\n"
-
-    "Problem Type: subjective\n"
-    "Problem: p < q인 두 소수 p, q에 대하여 p^2q < n <= pq^2을 만족하는 자연수 n의 개수가 308개일 때, p+q를 구하시오. (난이도: 상)\n"
-    "Choices: N/A\n"
-    "Image: N/A\n\n"
+    "수학 문제 예시\n\n"
+    "{\n"
+    '  "problems": [\n'
+    '    {\n'
+    '      "유형": "객관식",\n'
+    '      "문제": "좌표평면 위의 두 점 (1, -1), (2, 1)을 지나는 직선의 Y절편은?",\n'
+    '      "난이도": "하",\n'
+    '      "보기": "1. -3, 2. -2, 3. -1, 4. 0, 5. 1",\n'
+    '      "이미지": "N/A"\n'
+    '    }\n'
+    '  ]\n'
+    '}\n\n'
+    "{\n"
+    '  "problems": [\n'
+    '    {\n'
+    '      "유형": "객관식",\n'
+    '      "문제": "두 자연수 a, b에 대하여 다항식 2x^2 + 9x + k가 (2x+a)(x+b)로 인수분해되도록 하는 실수 k의 최솟값은?",\n'
+    '      "난이도": "중",\n'
+    '      "보기": "1. 1, 2. 4, 3. 7, 4. 10, 5. 13",\n'
+    '      "이미지": "N/A"\n'
+    '    }\n'
+    '  ]\n'
+    '}\n\n'
+    "{\n"
+    '  "problems": [\n'
+    '    {\n'
+    '      "유형": "주관식",\n'
+    '      "문제": "p < q인 두 소수 p, q에 대하여 p^2q < n <= pq^2을 만족하는 자연수 n의 개수가 308개일 때, p+q를 구하시오.",\n'
+    '      "난이도": "상",\n'
+    '      "보기": "N/A",\n'
+    '      "이미지": "N/A"\n'
+    '    }\n'
+    '  ]\n'
+    '}\n\n'
 )
+
 
 # ------------------------ GPT 응답 생성 ------------------------
 # GPT-OSS-20B model Load

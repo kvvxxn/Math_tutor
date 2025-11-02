@@ -1,0 +1,13 @@
+torch
+transformers
+sentence-transformers
+accelerate
+Pillow
+hf_transfer
+langchain
+langchain-text-splitters
+langchain-community
+langchain-huggingface
+langchain-chroma
+chromadb
+unstructured[md]

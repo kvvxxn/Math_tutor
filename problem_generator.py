@@ -12,7 +12,7 @@ user_input = input("문제 생성을 위해 원하는 학년과 학기의 단원
 vectordb, course, grade, semester, unit = parsing_user_input(user_input)
 
 # Content vectorstore retrieve 용 Query 생성 및 Embedding
-query = f"Key concepts, achievement criteria, and instructional considerations for the unit '{unit}'."
+query = f"'{unit}'에 대한 중요한 개념과 성취 기준."
 
 # Document retrieve
 retriever = vectordb.as_retriever()

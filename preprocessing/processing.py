@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 
 def _safe_get(d: Dict[str, Any], *keys, default=None):
     cur = d
@@ -34,17 +34,21 @@ def _extract_ids_from_filename(filename: str) -> Tuple[str, str]:
 
 def _normalize_target_group(folder_name: str) -> str:
     """
-    원본 폴더가 이미 'element3_problem', 'middle1_solution', 'high_problem' 형태라고 가정.
-    접미사만 제거하여 타깃 그룹명으로 사용: element3, middle1, high
+    'element3_problem', 'middle1_solution', 'high_problem' 형태라고 가정.
+    접미사 제거하여 타깃 그룹명: element3, middle1, high
     """
     for suf in ("_problem", "_solution"):
         if folder_name.endswith(suf):
             return folder_name[:-len(suf)]
     return folder_name
 
-# JSON Conversion file 생성
-def build_conversation_object(question_json: Dict[str, Any],
-                              answer_json: Dict[str, Any]) -> Dict[str, Any]:
+# JSON 변환 오브젝트 생성
+def build_conversation_object(
+    question_json: Dict[str, Any],
+    answer_json: Dict[str, Any],
+    split_name: str,
+    target_group: str,
+) -> Dict[str, Any]:
     q_filename = _safe_get(question_json, "question_filename", default="") or ""
     question_text = _safe_get(question_json, "OCR_info", "question_text", default="").strip()
     q_type1 = _safe_get(question_json, "question_info", "question_type1", default="")
@@ -53,17 +57,20 @@ def build_conversation_object(question_json: Dict[str, Any],
     q_type_label = _question_type_kor(q_type1)
     answer_text = _safe_get(answer_json, "answer_info", "answer_text", default="") or ""
 
-    base_id, diag_id = ("", "")
+    base_id, _ = ("", "")
     if q_filename:
-        base_id, diag_id = _extract_ids_from_filename(q_filename)
+        base_id, _ = _extract_ids_from_filename(q_filename)
 
     user_value = f"\n[문제유형: {q_type_label}] {question_text}"
     if q_difficulty is not None:
         user_value += f" ({q_difficulty})"
 
+    # 이미지 경로는 Dataset 폴더 기준
+    image_path = f"Dataset/{split_name}/images/{target_group}/{q_filename}" if q_filename else ""
+
     return {
         "id": base_id if base_id else _fallback_id(question_json),
-        "images": [f"diagrams/{diag_id}.png"] if diag_id else [],
+        "images": [image_path] if image_path else [],
         "conversations": [
             {"from": "user", "value": user_value},
             {"from": "assistant", "value": answer_text}
@@ -85,6 +92,22 @@ def _save_name_from_question_json(question_json: Dict[str, Any], default_stem: s
         return q_filename.rsplit(".", 1)[0] + ".json"
     return default_stem + ".json"
 
+def _find_solution_with_suffix_A(sol_dir: Path, problem_json_path: Path) -> Optional[Path]:
+    """
+    기본 규칙: 문제 파일명이 P3_1_01_00040_00469.json 이면
+    해설은 P3_1_01_00040_00469_A.json (동일 stem + '_A')
+    1) <stem>_A.json 우선 시도
+    2) 동일 파일명도 보조 시도 (혹시 일부가 _A 없이 같은 이름일 수 있어서)
+    """
+    stem = problem_json_path.stem  
+    cand1 = sol_dir / f"{stem}_A.json"
+    if cand1.exists():
+        return cand1
+    cand2 = sol_dir / problem_json_path.name
+    if cand2.exists():
+        return cand2
+    return None
+
 def process_split(src_root: Path, dst_root: Path, split_name: str) -> None:
     labels_dir = src_root / split_name / "labels"
     if not labels_dir.exists():
@@ -105,29 +128,38 @@ def process_split(src_root: Path, dst_root: Path, split_name: str) -> None:
 
         target_group = _normalize_target_group(prob_dir.name)
         out_dir = dst_root / split_name / "labels" / target_group
-
-        if not out_dir.exists():
-            print(f"[WARN] 출력 폴더 없음: {out_dir} → 스킵")
-            continue
+        out_dir.mkdir(parents=True, exist_ok=True)  
 
         for pjson_path in prob_dir.glob("*.json"):
             total += 1
-            sjson_path = sol_dir / pjson_path.name
-            if not sjson_path.exists():
-                missing_solution += 1
-                print(f"[WARN] 정답 JSON 누락: {sjson_path}")
-                continue
 
+            # Problem JSON 파일 읽기
             try:
                 question_json = json.loads(pjson_path.read_text(encoding="utf-8"))
+            except Exception as e:
+                malformed += 1
+                print(f"[ERROR] JSON 파싱 실패(문제): {pjson_path.name} / {e}")
+                continue
+
+            # Solution JSON 파일명 지정
+            sjson_path = _find_solution_with_suffix_A(sol_dir, pjson_path)
+            if not sjson_path:
+                missing_solution += 1
+                print(f"[WARN] 정답 JSON 누락(패턴 '_A' 매칭 실패): {pjson_path} -> {sol_dir}")
+                continue
+
+            # Solution JSON 파일 읽기
+            try:
                 answer_json = json.loads(sjson_path.read_text(encoding="utf-8"))
             except Exception as e:
                 malformed += 1
-                print(f"[ERROR] JSON 파싱 실패: {pjson_path.name} / {e}")
+                print(f"[ERROR] JSON 파싱 실패(정답): {sjson_path.name} / {e}")
                 continue
 
             try:
-                conv = build_conversation_object(question_json, answer_json)
+                conv = build_conversation_object(
+                    question_json, answer_json, split_name, target_group
+                )
                 save_name = _save_name_from_question_json(question_json, pjson_path.stem)
                 (out_dir / save_name).write_text(
                     json.dumps(conv, ensure_ascii=False, indent=2),
@@ -140,7 +172,7 @@ def process_split(src_root: Path, dst_root: Path, split_name: str) -> None:
 
     print(f"[{split_name}] 총:{total} 변환:{converted} 정답누락:{missing_solution} 오류:{malformed}")
 
-# 변환된 JSON을 이용하여 JSONL 파일 생성
+# 변환된 JSON 파일으로부터 통합 JSONL 생성
 
 def _iter_converted_json(dst_root: Path, split_name: str):
     """
@@ -173,6 +205,7 @@ def build_jsonl_manifest(dst_root: Path, prepared_dir: Path) -> None:
     - Dataset/Training/labels/**.json → train.jsonl
     - Dataset/Validation/labels/**.json → val.jsonl
     """
+    prepared_dir.mkdir(parents=True, exist_ok=True) 
     mapping = {
         "Training": prepared_dir / "train.jsonl",
         "Validation": prepared_dir / "val.jsonl",
@@ -194,9 +227,10 @@ def build_jsonl_manifest(dst_root: Path, prepared_dir: Path) -> None:
         print(f"[JSONL] {out_path} 생성: {count} 샘플")
 
 def main():
-    SRC_ROOT = Path("Data")
-    DST_ROOT = Path("Dataset")
-    PREPARED = DST_ROOT / "Prepared"   
+    ROOT = Path(__file__).parent
+    SRC_ROOT = ROOT / "Data"
+    DST_ROOT = ROOT / "Dataset"
+    PREPARED = DST_ROOT / "Prepared"
 
     for split in ("Training", "Validation"):
         process_split(SRC_ROOT, DST_ROOT, split)

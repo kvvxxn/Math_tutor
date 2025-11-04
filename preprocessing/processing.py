@@ -40,7 +40,7 @@ def _normalize_target_group(folder_name: str) -> str:
     for suf in ("_problem", "_solution"):
         if folder_name.endswith(suf):
             return folder_name[:-len(suf)]
-    return folder_name 
+    return folder_name
 
 # JSON Conversion file 생성
 def build_conversation_object(question_json: Dict[str, Any],
@@ -140,11 +140,69 @@ def process_split(src_root: Path, dst_root: Path, split_name: str) -> None:
 
     print(f"[{split_name}] 총:{total} 변환:{converted} 정답누락:{missing_solution} 오류:{malformed}")
 
+# 변환된 JSON을 이용하여 JSONL 파일 생성
+
+def _iter_converted_json(dst_root: Path, split_name: str):
+    """
+    Dataset/<split>/labels/<track>/*.json 을 재귀 탐색해 yield
+    """
+    base = dst_root / split_name / "labels"
+    if not base.exists():
+        return
+    for p in base.rglob("*.json"):
+        yield p
+
+def _record_with_meta(p: Path) -> Dict[str, Any]:
+    """
+    파일 내용을 불러와, track 메타를 추가해 반환
+    """
+    rec = json.loads(p.read_text(encoding="utf-8"))
+    # track: labels/<track>/... 에서 추출
+    parts = p.parts
+    try:
+        idx = parts.index("labels")
+        track = parts[idx+1] if len(parts) > idx+1 else ""
+    except ValueError:
+        track = ""
+    rec.setdefault("meta", {})["track"] = track
+    return rec
+
+def build_jsonl_manifest(dst_root: Path, prepared_dir: Path) -> None:
+    """
+    Dataset/Prepared/{train.jsonl, val.jsonl} 생성
+    - Dataset/Training/labels/**.json → train.jsonl
+    - Dataset/Validation/labels/**.json → val.jsonl
+    """
+    mapping = {
+        "Training": prepared_dir / "train.jsonl",
+        "Validation": prepared_dir / "val.jsonl",
+    }
+
+    for split, out_path in mapping.items():
+        count = 0
+        with out_path.open("w", encoding="utf-8") as wf:
+            for jp in _iter_converted_json(dst_root, split):
+                try:
+                    rec = _record_with_meta(jp)
+                    # sanity: 필수 키가 없으면 스킵
+                    if not rec.get("conversations"):
+                        continue
+                    wf.write(json.dumps(rec, ensure_ascii=False) + "\n")
+                    count += 1
+                except Exception as e:
+                    print(f"[WARN] JSONL 수록 실패: {jp} / {e}")
+        print(f"[JSONL] {out_path} 생성: {count} 샘플")
+
 def main():
     SRC_ROOT = Path("Data")
     DST_ROOT = Path("Dataset")
+    PREPARED = DST_ROOT / "Prepared"   
+
     for split in ("Training", "Validation"):
         process_split(SRC_ROOT, DST_ROOT, split)
+
+    # 변환 완료 후 통합 JSONL 생성
+    build_jsonl_manifest(DST_ROOT, PREPARED)
 
 if __name__ == "__main__":
     main()

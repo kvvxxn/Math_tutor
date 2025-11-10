@@ -10,11 +10,11 @@ from datasets import load_dataset
 from transformers import (
     Qwen3VLForConditionalGeneration,
     AutoProcessor,
-    Mxfp4Config,
+    BitsAndBytesConfig,
     Trainer,
     TrainingArguments,
 )
-from peft import LoraConfig, get_peft_model
+from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
 MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
 
@@ -39,20 +39,32 @@ val_ds = load_dataset("json", data_files="Dataset/labels/val.jsonl",   split="tr
 
 # ---------- Model load ----------
 # 4-bit로 불러오기 위한 설정
-quantization_config = Mxfp4Config(
+quantization_config = BitsAndBytesConfig(
     load_in_4bit=True,
     bnb_4bit_quant_type="nf4",
-    bnb_4bit_compute_type=torch.float16,
+    bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float16,
+    bnb_4bit_use_double_quant=True,
 )
 
 model = Qwen3VLForConditionalGeneration.from_pretrained(
     MODEL_NAME, 
     quantization_config=quantization_config,
-    torch_dtype="auto", 
+    dtype="auto", 
     device_map="auto"
 )
-processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
 
+# Processor 로드
+processor = AutoProcessor.from_pretrained("Qwen/Qwen3-VL-8B-Instruct")
+if processor.tokenizer.pad_token_id is None:
+    processor.tokenizer.pad_token = processor.tokenizer.eos_token
+
+# required_grad 설정 및 gradient checkpointing 활성화
+model = prepare_model_for_kbit_training(
+    model, 
+    use_gradient_checkpointing=True
+)
+
+# Gradient Checkpointing 활성화 시 꺼야 하는 설정
 model.config.use_cache = False
 
 # ---------- LoRA 적용 ----------
@@ -67,7 +79,7 @@ lora_config = LoraConfig(
 model = get_peft_model(model, lora_config)
 
 # ---------- Preprocessing ----------
-seed = random.Random(42)  # 재현성
+seed = random.Random(42)  
 
 def _resolve_path(p: str) -> Path:
     pp = Path(p)
@@ -83,7 +95,8 @@ def _choose_mode_for_train(has_img: bool, has_text: bool) -> str:
         weights=[MIX_PROBS["img_text"], MIX_PROBS["img_only"], MIX_PROBS["text_only"]],
         k=1,
     )[0]
-    # 폴백 로직
+    
+    # 가능하지 않은 경우 처리
     if mode == "img_only" and not has_img:
         mode = "text_only" if has_text else "img_text"
     if mode == "text_only" and not has_text:
@@ -97,30 +110,45 @@ def _choose_mode_for_train(has_img: bool, has_text: bool) -> str:
             mode = "text_only"
     return mode
 
+def _text_seg(x: Any) -> Dict[str, str]:
+    # 항상 text segment로 강제
+    # text segment: {"type":"text","text":...}
+    # QWEN3-VL은 text segment만 지원하기 때문
+    if x is None:
+        x = ""
+    if not isinstance(x, str):
+        x = str(x)
+    return {"type": "text", "text": x}
+
 def _build_messages(example: Dict[str, Any], mode: str) -> list:
     """
     JSONL 레코드 -> Qwen3-VL chat messages
-      mode in {"img_text","img_only","text_only"}
+    모든 role의 content를 세그먼트 리스트로 통일.
+      - system: [{"type":"text","text":...}]
+      - user:   [{"type":"image",...}, {"type":"text","text":...}, ...]
+      - assistant: [{"type":"text","text":...}]
     """
-    convs = example.get("conversations", [])
+    convs = example.get("conversations", []) or []
     messages: List[Dict[str, Any]] = []
 
-    # System prompt
+    # ----- system prompt -----
     idx = 0
     if convs and convs[0].get("from") == "system":
-        messages.append({"role": "system", "content": [{"type": "text", "text": convs[0]["value"]}]})
+        sys_txt = convs[0].get("value", "")
+        messages.append({"role": "system", "content": [_text_seg(sys_txt)]})
         idx = 1
 
-    # User prompt
+    # ----- user prompt -----
     user_text = ""
     for m in convs[idx:]:
-        if m.get("from") == "user":
+        if (m.get("from") == "user"):
             user_text = m.get("value", "")
             break
+    user_text = "" if user_text is None else (user_text if isinstance(user_text, str) else str(user_text))
 
-    # Image load
-    imgs = []
-    for p in example.get("images", []):
+    # ----- 이미지 로드 -----
+    imgs: List[Image.Image] = []
+    for p in example.get("images", []) or []:
         if isinstance(p, str) and p:
             path = _resolve_path(p)
             if path.exists():
@@ -130,27 +158,30 @@ def _build_messages(example: Dict[str, Any], mode: str) -> list:
                     pass
 
     has_img = len(imgs) > 0
-    has_text = isinstance(user_text, str) and len(user_text.strip()) > 0
+    has_text = len(user_text.strip()) > 0
 
-    # user content 구성 모드별
-    content = []
+    # ----- user content -----
+    content: List[Dict[str, Any]] = []
     if mode in ("img_text", "img_only") and has_img:
-        content.extend([{"type": "image", "image": im} for im in imgs])
+        for im in imgs:
+            content.append({"type": "image", "image": im})
     if mode in ("img_text", "text_only"):
-        content.append({"type": "text", "text": user_text if has_text else ""})
-    # 혹시 content가 비면 최소 텍스트 하나 넣기
+        content.append(_text_seg(user_text if has_text else ""))
+
     if not content:
-        content.append({"type": "text", "text": user_text})
+        content.append(_text_seg(user_text))
 
     messages.append({"role": "user", "content": content})
 
-    # assistant 답변
+    # ----- assistant -----
     assistant_text = ""
     for m in convs[idx:]:
-        if m.get("from") == "assistant":
+        if (m.get("from") == "assistant"):
             assistant_text = m.get("value", "")
             break
-    messages.append({"role": "assistant", "content": [{"type": "text", "text": assistant_text}]})
+    assistant_text = "" if assistant_text is None else (assistant_text if isinstance(assistant_text, str) else str(assistant_text))
+
+    messages.append({"role": "assistant", "content": [_text_seg(assistant_text)]})
 
     return messages
 
@@ -186,14 +217,18 @@ def _mask_assistant_only(model_inputs, tokenizer) -> Dict[str, torch.Tensor]:
         if a < b:
             labels[a:b] = input_ids[a:b]
 
-    out = {
-        "input_ids": input_ids,
-        "attention_mask": attention_mask,
-        "labels": labels,
-    }
-    for k, v in model_inputs.items():
-        if k not in out:
-            out[k] = v[0]
+    out = {k: v[0] for k, v in model_inputs.items()}
+    
+    out["input_ids"] = input_ids
+    out["attention_mask"] = attention_mask
+    out["labels"] = labels
+
+    # Key error 방지: 'pixel_values', 'image_grid_thw'가 없을 경우 None 할당
+    if "pixel_values" not in out:
+        out["pixel_values"] = None
+    if "image_grid_thw" not in out:
+        out["image_grid_thw"] = None
+
     return out
 
 def preprocess_train(example: Dict[str, Any]) -> Dict[str, torch.Tensor]:
@@ -210,16 +245,63 @@ def preprocess_train(example: Dict[str, Any]) -> Dict[str, torch.Tensor]:
     mode = _choose_mode_for_train(has_img, has_text)
 
     messages = _build_messages(example, mode)
-    model_inputs = processor(messages=messages, return_tensors="pt")
+
+    # 이미지 추출
+    images = []
+    for msg in messages:
+        if msg["role"] == "user":
+            for segment in msg["content"]:
+                if segment["type"] == "image":
+                    images.append(segment["image"])
+    
+    # messages 리스트에 QWEN3-VL Chat template 적용
+    #    (tokenize=False: 토크나이징은 processor가 하도록 텍스트만 반환)
+    #    (add_generation_prompt=False: assistant 응답이 이미 포함되어 있으므로)
+    text = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=False
+    )
+
+    # processor 호출
+    model_inputs = processor(
+        text=text,
+        images=images if images else None,  # 이미지가 있을 때만 전달
+        return_tensors="pt"
+    )
+
+    # 정답 부분 Masking
     return _mask_assistant_only(model_inputs, processor.tokenizer)
 
 def preprocess_val(example: Dict[str, Any]) -> Dict[str, torch.Tensor]:
-    # 검증: 데이터에 있는 그대로(이미지도, 텍스트도 모두 사용)
     messages = _build_messages(example, mode="img_text")
-    model_inputs = processor(messages=messages, return_tensors="pt")
+
+    # 이미지 추출
+    images = []
+    for msg in messages:
+        if msg["role"] == "user":
+            for segment in msg["content"]:
+                if segment["type"] == "image":
+                    images.append(segment["image"])
+
+    # messages 리스트에 QWEN3-VL Chat template 적용
+    text = processor.apply_chat_template(
+        messages,
+        tokenize=False,
+        add_generation_prompt=False
+    )
+
+    # processor 호출
+    model_inputs = processor(
+        text=text,
+        images=images if images else None,
+        return_tensors="pt"
+    )
+    
+    # 정답 부분 Masking
     return _mask_assistant_only(model_inputs, processor.tokenizer)
 
-# ---------- map 전처리 ----------
+# ---------- JSONL -> Dataset ----------
 train_pp = train_ds.map(preprocess_train, remove_columns=train_ds.column_names)
 val_pp   = val_ds.map(preprocess_val,   remove_columns=val_ds.column_names)
 
@@ -228,22 +310,27 @@ val_pp   = val_ds.map(preprocess_val,   remove_columns=val_ds.column_names)
 class CollatorQwenVL:
     pad_id: int
     def __call__(self, features: List[Dict[str, Any]]) -> Dict[str, torch.Tensor]:
-        ids  = [f["input_ids"] for f in features]
-        attn = [f["attention_mask"] for f in features]
-        labs = [f["labels"] for f in features]
+        
+        # Padding
+        ids  = [torch.tensor(f["input_ids"]) for f in features]
+        attn = [torch.tensor(f["attention_mask"]) for f in features]
+        labs = [torch.tensor(f["labels"]) for f in features]
+        
         ids  = torch.nn.utils.rnn.pad_sequence(ids,  batch_first=True, padding_value=self.pad_id)
         attn = torch.nn.utils.rnn.pad_sequence(attn, batch_first=True, padding_value=0)
         labs = torch.nn.utils.rnn.pad_sequence(labs, batch_first=True, padding_value=IGNORE_INDEX)
         batch = {"input_ids": ids, "attention_mask": attn, "labels": labs}
 
-        # 멀티모달 키(있을 때만): pixel_values / image_grid_thw 등
-        for key in ["pixel_values", "image_grid_thw"]:
-            if key in features[0]:
-                vals = [f.get(key) for f in features if key in f]
-                if len(vals) > 0 and isinstance(vals[0], torch.Tensor):
-                    batch[key] = torch.stack(vals)
-                elif len(vals) > 0:
-                    batch[key] = vals
+        # 텍스트 있으면 추가
+        pixel_values_list = [f.get("pixel_values") for f in features if f.get("pixel_values") is not None]
+        if pixel_values_list:
+            batch["pixel_values"] = torch.stack([torch.tensor(pv) for pv in pixel_values_list])
+
+        # 이미지 있으면 추가
+        image_grid_thw_list = [f.get("image_grid_thw") for f in features if f.get("image_grid_thw") is not None]
+        if image_grid_thw_list:
+            batch["image_grid_thw"] = torch.tensor(image_grid_thw_list)
+
         return batch
 
 collator = CollatorQwenVL(pad_id=processor.tokenizer.pad_token_id or 0)
@@ -260,7 +347,7 @@ args = TrainingArguments(
     warmup_ratio=0.03,
     logging_steps=10,
     save_steps=500,
-    evaluation_strategy="steps",
+    eval_strategy="steps",
     eval_steps=500,
     bf16=torch.cuda.is_available(),
     gradient_checkpointing=True,

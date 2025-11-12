@@ -1,13 +1,27 @@
+# Core ML/DL libraries
 torch
 transformers
-sentence-transformers
 accelerate
+datasets
+peft
+bitsandbytes
+
+# Vision & Image processing
 Pillow
-hf_transfer
+
+# Retrieval & Vector Search
+sentence-transformers
 langchain
 langchain-text-splitters
 langchain-community
 langchain-huggingface
 langchain-chroma
 chromadb
+
+# Data processing
 unstructured[md]
+datasets
+
+# Utilities
+hf_transfer
+python-dotenv

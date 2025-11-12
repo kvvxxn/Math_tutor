@@ -1,0 +1,1 @@
+이 폴더는 src/math_tutor/training/finetune_solver.py 에서 사용할 Training / Validation Dataset을 저장하는 폴더입니다.

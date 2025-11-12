@@ -1,0 +1,1 @@
+이 폴더는 src/math_tutor/create_db.py의 실행 결과로 생기는 Chroma DB가 저장되는 폴더입니다.

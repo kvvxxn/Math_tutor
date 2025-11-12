@@ -1,0 +1,1 @@
+이 폴더는 src/math_tutor/create_db.py 에서 사용할 Markdown 형식의 문서들을 저장하는 폴더입니다.

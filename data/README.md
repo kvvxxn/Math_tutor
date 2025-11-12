@@ -36,6 +36,7 @@ original_data/
 │       └── high_solution/
 │   └── labels/
 └── prepared/
-│   └── train.jsonl
-│   └── val.jsonl
+│   └── labels/
+│       ├── train.jsonl
+│       └── val.jsonl
 ```

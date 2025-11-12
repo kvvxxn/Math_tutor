@@ -338,7 +338,7 @@ collator = CollatorQwenVL(pad_id=processor.tokenizer.pad_token_id or 0)
 
 # ---------- TrainingArguments / Trainer ----------
 args = TrainingArguments(
-    output_dir="./qwen3vl_math_lora",
+    output_dir="./outputs/math_solver_finetuned",
     per_device_train_batch_size=1,
     per_device_eval_batch_size=1,
     gradient_accumulation_steps=8,

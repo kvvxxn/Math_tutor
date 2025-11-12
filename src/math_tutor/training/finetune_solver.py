@@ -89,7 +89,9 @@ def _resolve_path(p: str) -> Path:
     return alt if alt.exists() else pp
 
 def _choose_mode_for_train(has_img: bool, has_text: bool) -> str:
-    """훈련 샘플에 대해 모드 선택(6:1:3), 불가능한 조합은 자동 폴백."""
+    """
+    6:3:1의 비율로 Imaeg+text, image only, text only 중 하나 선택
+    """
     mode = seed.choices(
         population=["img_text", "img_only", "text_only"],
         weights=[MIX_PROBS["img_text"], MIX_PROBS["img_only"], MIX_PROBS["text_only"]],
@@ -111,9 +113,12 @@ def _choose_mode_for_train(has_img: bool, has_text: bool) -> str:
     return mode
 
 def _text_seg(x: Any) -> Dict[str, str]:
-    # 항상 text segment로 강제
-    # text segment: {"type":"text","text":...}
-    # QWEN3-VL은 text segment만 지원하기 때문
+    """
+    항상 text segment로 강제
+    text segment: {"type":"text","text":...}
+    QWEN3-VL은 text segment만 지원하기 때문
+    """
+    
     if x is None:
         x = ""
     if not isinstance(x, str):
@@ -123,10 +128,7 @@ def _text_seg(x: Any) -> Dict[str, str]:
 def _build_messages(example: Dict[str, Any], mode: str) -> list:
     """
     JSONL 레코드 -> Qwen3-VL chat messages
-    모든 role의 content를 세그먼트 리스트로 통일.
-      - system: [{"type":"text","text":...}]
-      - user:   [{"type":"image",...}, {"type":"text","text":...}, ...]
-      - assistant: [{"type":"text","text":...}]
+    모든 role의 content를 text segment list로 통일함.
     """
     convs = example.get("conversations", []) or []
     messages: List[Dict[str, Any]] = []
@@ -255,8 +257,8 @@ def preprocess_train(example: Dict[str, Any]) -> Dict[str, torch.Tensor]:
                     images.append(segment["image"])
     
     # messages 리스트에 QWEN3-VL Chat template 적용
-    #    (tokenize=False: 토크나이징은 processor가 하도록 텍스트만 반환)
-    #    (add_generation_prompt=False: assistant 응답이 이미 포함되어 있으므로)
+    # Tokenization은 Processor 내부에서 수행
+    # Assistant 부분이 이미 존재하기 때문에 add_generation_prompt=False
     text = processor.apply_chat_template(
         messages,
         tokenize=False,
@@ -305,7 +307,7 @@ def preprocess_val(example: Dict[str, Any]) -> Dict[str, torch.Tensor]:
 train_pp = train_ds.map(preprocess_train, remove_columns=train_ds.column_names)
 val_pp   = val_ds.map(preprocess_val,   remove_columns=val_ds.column_names)
 
-# ---------- Collator ----------
+# ---------- Collator function ----------
 @dataclass
 class CollatorQwenVL:
     pad_id: int

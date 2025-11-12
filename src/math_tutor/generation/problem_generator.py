@@ -1,7 +1,7 @@
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
-from retriever import parsing_user_input, retrieve
+from math_tutor.rag.utils import parsing_user_input, retrieve
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 

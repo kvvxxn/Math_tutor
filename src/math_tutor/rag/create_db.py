@@ -5,15 +5,13 @@ from langchain_text_splitters import MarkdownHeaderTextSplitter, RecursiveCharac
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 
-# 프로젝트 루트 및 경로
-ROOT_DIR = Path(__file__).parent
-DOCUMENT_DIR = ROOT_DIR / "documents"
-PERSIST_ROOT = ROOT_DIR / "vectordb"
+from math_tutor.config.path import DOCUMENT_DIR, VECTORDB_DIR
+
 EMB_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 # 디렉토리 생성
-DOCUMENT_DIR.mkdir(exist_ok=True)
-PERSIST_ROOT.mkdir(exist_ok=True)
+DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
+VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
 
 # 문서명 -> DB name 매핑
 NAME_MAP: Dict[str, str] = {
@@ -31,6 +29,7 @@ headers_to_split_on = [
     ("##", "Header 2"),
     ("###", "Header 3"),
 ]
+
 md_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=headers_to_split_on)
 
 text_splitter = RecursiveCharacterTextSplitter(
@@ -38,7 +37,7 @@ text_splitter = RecursiveCharacterTextSplitter(
 )
 embed_model = HuggingFaceEmbeddings(model_name=EMB_MODEL)
 
-def create_vectorstore_for_file(file_path: Path, name: str, persist_directory: Path = None) -> Chroma:
+def create_vectorstore_for_file(file_path: Path, name: str, persist_directory: Optional[Path] = None) -> Chroma:
     """
     단일 파일용 create_vectorstore와 동일한 동작으로 벡터스토어 생성
     """
@@ -62,7 +61,7 @@ def create_vectorstore_for_file(file_path: Path, name: str, persist_directory: P
 
     # vectordb 폴더 생성
     if persist_directory is None:
-        persist_directory = PERSIST_ROOT / name
+        persist_directory = VECTORDB_DIR / name
     Path(persist_directory).mkdir(parents=True, exist_ok=True)
 
     # 벡터스토어 생성
@@ -93,9 +92,9 @@ def build_all_vectorstores(directory: Path, skip: List[str] = None):
             _ = create_vectorstore_for_file(
                 file_path=md,
                 name=collection_name,
-                persist_directory=PERSIST_ROOT / collection_name
+                persist_directory=VECTORDB_DIR / collection_name
             )
-            print(f"[OK] {md.name} -> {collection_name} @ {PERSIST_ROOT / collection_name}")
+            print(f"[OK] {md.name} -> {collection_name} @ {VECTORDB_DIR / collection_name}")
             created.append(md.name)
         except Exception as e:
             print(f"[FAIL] {md.name}: {e}")
@@ -105,7 +104,7 @@ def build_all_vectorstores(directory: Path, skip: List[str] = None):
         print(" -", c)
 
 def main():
-    skip = ["교육과정총정리.md"]
+    skip = ["교육과정총정리.md"] # 교육 과정 총정리 문서 제외 학년별 문서 벡터스토어 생성
     build_all_vectorstores(DOCUMENT_DIR, skip=skip)
 
 if __name__ == "__main__":

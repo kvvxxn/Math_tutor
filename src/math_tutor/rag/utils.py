@@ -5,15 +5,13 @@ from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_core.documents import Document
 
-# 프로젝트 루트 디렉토리 설정
-ROOT_DIR = Path(__file__).parent
-DOCUMENT_DIR = ROOT_DIR / "documents"
-PERSIST_DIR = ROOT_DIR / "vectordb"
+from math_tutor.config.path import DOCUMENT_DIR, VECTORDB_DIR, ROOT_DIR
+
 EMB_MODEL = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 # 필요한 디렉토리 생성
-DOCUMENT_DIR.mkdir(exist_ok=True)
-PERSIST_DIR.mkdir(exist_ok=True)
+DOCUMENT_DIR.mkdir(parents=True, exist_ok=True)
+VECTORDB_DIR.mkdir(parents=True, exist_ok=True)
 
 # Embedding 모델 초기화
 embed_model = HuggingFaceEmbeddings(model_name=EMB_MODEL)
@@ -82,7 +80,7 @@ def parsing_user_input(user_input: str) -> tuple:
     vectordb = Chroma(
         collection_name=DB_MAP[db_key],
         embedding_function=embed_model,
-        persist_directory=str(PERSIST_DIR / DB_MAP[db_key])
+        VECTORDB_DIRectory=str(VECTORDB_DIR / DB_MAP[db_key])
     )
 
     return vectordb, course, grade, semester, unit

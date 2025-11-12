@@ -16,10 +16,9 @@ from transformers import (
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 
-MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
+from math_tutor.config.path import DATA_DIR, ORIGINAL_DATA_DIR, ROOT_DIR
 
-# 루트 디렉토리 설정
-ROOT_DIR = Path.cwd()
+MODEL_NAME = "Qwen/Qwen3-VL-8B-Instruct"
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -34,8 +33,8 @@ MIX_PROBS = {
 }
 
 # Training 데이터셋 로드
-train_ds = load_dataset("json", data_files="Dataset/labels/train.jsonl", split="train")
-val_ds = load_dataset("json", data_files="Dataset/labels/val.jsonl",   split="train")
+train_ds = load_dataset("json", data_files=(DATA_DIR / "Prepared" / "train.jsonl").as_posix(), split="train")
+val_ds = load_dataset("json", data_files=(DATA_DIR / "Prepared" / "val.jsonl").as_posix(), split="train")
 
 # ---------- Model load ----------
 # 4-bit로 불러오기 위한 설정

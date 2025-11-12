@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 from collections import OrderedDict
+from math_tutor.config.path import DATA_DIR, ORIGINAL_DATA_DIR
 
 DEFAULT_SYSTEM = (
     "You are an assistant for solving math problems in Korean. "
@@ -75,11 +76,11 @@ def _find_solution_with_suffix_A(sol_dir: Path, problem_json_path: Path) -> Opti
     return None
 
 def _extract_answer_text(answer_json: Dict[str, Any]) -> str:
-    # 1) answer_info[].answer_text 우선
+    # answer_info[].answer_text 우선 추출
     ans = _safe_get(answer_json, "answer_info", "answer_text", default="") or ""
     if ans.strip():
         return ans.strip()
-    # 2) answer_info[].answer_bbox[] 중 type == "answer"
+    # answer_info[].answer_bbox[] 중 type=="answer"인 text 추출
     bboxes = _safe_get(answer_json, "answer_info", "answer_bbox", default=[]) or []
     if isinstance(bboxes, list):
         for bb in bboxes:
@@ -87,7 +88,7 @@ def _extract_answer_text(answer_json: Dict[str, Any]) -> str:
                 txt = bb.get("text", "")
                 if isinstance(txt, str) and txt.strip():
                     return txt.strip()
-    # 3) 마지막 fallback: 빈 문자열
+    # 답변 텍스트를 찾지 못한 경우 빈 문자열 반환
     return ""
 
 
@@ -108,7 +109,7 @@ def build_conversation_object(
     answer_text = _extract_answer_text(answer_json)
 
     # 이미지 경로
-    image_path = f"Dataset/{split_name}/images/{target_group}/{q_filename}" if q_filename else ""
+    image_path = (DATA_DIR / split_name / "images" / target_group / q_filename).as_posix()
 
     # user 메시지 구성
     user_value = f"\n[문제유형: {q_type_label}] {question_text}"
@@ -231,12 +232,12 @@ def build_jsonl_manifest(dst_root: Path, prepared_dir: Path) -> None:
     """
     Dataset/Prepared/{train.jsonl, val.jsonl} 생성
     - Dataset/Training/labels/**.json → train.jsonl
-    - Dataset/Validation/labels/**.json → val.jsonl
+    - Dataset/Validation/labels/**.json → val.jsonl 
     """
     prepared_dir.mkdir(parents=True, exist_ok=True)
     mapping = {
-        "Training": prepared_dir / "train.jsonl",
-        "Validation": prepared_dir / "val.jsonl",
+        "Training": prepared_dir / "labels" / "train.jsonl",
+        "Validation": prepared_dir / "labels" / "val.jsonl",
     }
 
     for split, out_path in mapping.items():
@@ -255,9 +256,9 @@ def build_jsonl_manifest(dst_root: Path, prepared_dir: Path) -> None:
 
 def main():
     ROOT = Path(__file__).parent
-    SRC_ROOT = ROOT / "Data"
-    DST_ROOT = ROOT / "Dataset"
-    PREPARED = DST_ROOT / "Prepared"
+    SRC_ROOT = ORIGINAL_DATA_DIR      
+    DST_ROOT = DATA_DIR               
+    PREPARED = DATA_DIR / "Prepared" 
 
     for split in ("Training", "Validation"):
         process_split(SRC_ROOT, DST_ROOT, split, DEFAULT_SYSTEM)

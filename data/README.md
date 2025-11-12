@@ -3,7 +3,10 @@
 폴더 구조는 다음과 같습니다.
 
 - images의 각 폴더에는 문제에 해당하는 이미지 데이터가 저장되어 있습니다.
-- JSONL 파일은 scr/math_tutor/preprocessing/preproecss_data.py의 실행 결과로 전처리된 JSON 파일로 이루어진 파일입니다.
+
+- labels는 scr/math_tutor/preprocessing/preproecss_data.py의 실행 결과로 생긴 변환된 JSON 파일이 저장되는 폴더입니다.
+  
+- JSONL 파일은 labels 폴더 내 변환된 JSON 파일을 이용하여 생성된 파일입니다.
 
 ```bash
 original_data/
@@ -18,6 +21,7 @@ original_data/
 │       ├── middle3/
 │       ├── high/
 │       └── high_solution/
+│   └── labels/
 │
 ├── validation/
 │   └── images/
@@ -30,6 +34,7 @@ original_data/
 │       ├── middle3/
 │       ├── high/
 │       └── high_solution/
+│   └── labels/
 └── prepared/
 │   └── train.jsonl
 │   └── val.jsonl
